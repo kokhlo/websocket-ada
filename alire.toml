@@ -1,0 +1,12 @@
+name = "websocket_ada"
+description = "RFC 6455 WebSocket client library for Ada: frame codec and connection layer"
+version = "0.1.0-dev"
+
+authors = ["Konstantin Khlopkov"]
+maintainers = ["Konstantin Khlopkov <konstantin.khlopkov93@gmail.com>"]
+maintainers-logins = ["kokhlo"]
+licenses = "MIT"
+
+tags = ["websocket", "rfc6455", "network", "client"]
+
+project-files = ["websocket_ada.gpr"]

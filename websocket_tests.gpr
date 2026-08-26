@@ -1,0 +1,16 @@
+with "websocket_ada.gpr";
+
+project Websocket_Tests is
+   for Source_Dirs use ("test");
+   for Object_Dir use "obj_test";
+   for Main use ("test_runner.adb");
+   for Create_Missing_Dirs use "True";
+   
+   package Compiler is
+      for Default_Switches ("Ada") use ("-gnatwa", "-gnatwe", "-gnatyM120", "-g");
+   end Compiler;
+   
+   package Binder is
+      for Default_Switches ("Ada") use ("-E");
+   end Binder;
+end Websocket_Tests;

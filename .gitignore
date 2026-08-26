@@ -1,0 +1,23 @@
+# Alire
+/alire/
+/config/
+
+# Build artifacts
+/obj/
+/obj_test/
+/lib/
+*.o
+*.ali
+*.lexch
+
+# Executables
+test_runner
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
