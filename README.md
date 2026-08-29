@@ -4,7 +4,7 @@ RFC 6455 WebSocket client library for Ada.
 
 ## Status
 
-**Work in Progress** — Frame codec complete, handshake + TCP layer in development.
+**Work in Progress** — Frame codec + handshake complete, TCP connection layer next.
 
 Current implementation:
 - ✅ RFC 6455 frame codec (encode/decode)
@@ -13,12 +13,15 @@ Current implementation:
 - ✅ Client masking (RFC 6455 §5.3)
 - ✅ Control frame validation (≤125 bytes)
 - ✅ Incremental parsing (Need_More_Data state)
-- ✅ Comprehensive test suite (30 tests, all passing)
+- ✅ HTTP handshake layer (RFC 6455 §4.1, §4.2.2)
+- ✅ Sec-WebSocket-Accept computation (SHA-1 + Base64)
+- ✅ Server response validation (status 101, case-insensitive headers, Connection token list)
+- ✅ 52 tests (30 frame codec + 22 handshake), all passing
 
 Coming next:
-- HTTP upgrade handshake (RFC 6455 §4)
-- TCP connection layer
-- SHA-1 + Base64 for handshake keys
+- TCP connection layer (GNAT.Sockets)
+- Send/receive loop with automatic Ping/Pong
+- Close handshake (RFC 6455 §5.5.1)
 
 ## Why websocket-ada?
 
@@ -30,7 +33,7 @@ This library provides a lightweight, standalone WebSocket client for Ada project
 
 ## Dependencies
 
-None beyond GNAT runtime. No external C libraries, no AWS framework.
+None beyond GNAT runtime. Base64 is self-contained; SHA-1 uses GNAT.SHA1 (part of the compiler runtime). No external C libraries, no AWS framework.
 
 ## Building
 
@@ -44,6 +47,9 @@ gprbuild -p -P websocket_ada.gpr
 # Run tests
 gprbuild -p -P websocket_tests.gpr
 ./obj_test/test_runner
+
+gprbuild -p -P websocket_handshake_tests.gpr
+./obj_test_handshake/test_handshake
 ```
 
 ## Example
