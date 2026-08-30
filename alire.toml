@@ -1,5 +1,5 @@
 name = "websocket_ada"
-description = "RFC 6455 WebSocket client library for Ada: frame codec and connection layer"
+description = "RFC 6455 WebSocket client: framing and handshake for Ada"
 version = "0.2.0"
 
 authors = ["Konstantin Khlopkov"]
