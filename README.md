@@ -1,5 +1,7 @@
 # websocket-ada
 
+[![CI](https://github.com/kokhlo/websocket-ada/actions/workflows/build-test.yml/badge.svg)](https://github.com/kokhlo/websocket-ada/actions/workflows/build-test.yml)
+
 RFC 6455 WebSocket client library for Ada.
 
 ## Status
@@ -34,6 +36,18 @@ This library provides a lightweight, standalone WebSocket client for Ada project
 ## Dependencies
 
 None beyond GNAT runtime. Base64 is self-contained; SHA-1 uses GNAT.SHA1 (part of the compiler runtime). No external C libraries, no AWS framework.
+
+## Installation
+
+With [Alire](https://alire.ada.dev):
+
+```bash
+alr with websocket
+```
+
+> **Note:** `websocket` is available after the alire-index merge
+> ([PR](https://github.com/alire-project/alire-index/pull/2097)). Until then, use the repository directly:
+> `alr with --use /path/to/websocket-ada`
 
 ## Building
 
@@ -78,6 +92,14 @@ Consumed : Stream_Element_Count;
 Status : Decode_Status;
 Decode (Buffer, Decoded, Consumed, Status);
 ```
+
+## Roadmap
+
+- [x] RFC 6455 frame codec (all frame types, 7/16/64-bit lengths, client masking)
+- [x] HTTP upgrade handshake (Sec-WebSocket-Accept, response validation)
+- [ ] TCP connection layer with automatic Ping/Pong — v0.1
+- [ ] Automatic reconnection with exponential backoff — v0.2
+- [ ] Per-message compression (`permessage-deflate`, RFC 7692) — v0.3
 
 ## License
 
