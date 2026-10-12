@@ -1,0 +1,46 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check tag matches alire.toml version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          MANIFEST_VERSION=$(grep -E '^version' alire.toml | sed 's/version *= *"\(.*\)"/\1/')
+          if [ "$TAG" != "$MANIFEST_VERSION" ]; then
+            echo "tag v$TAG does not match alire.toml version $MANIFEST_VERSION" >&2
+            exit 1
+          fi
+          echo "releasing $TAG"
+
+      - name: Verify tests pass on the tag
+        uses: alire-project/setup-alire@v5
+      - run: |
+          alr build
+          alr exec -- gprbuild -p -P websocket_tests.gpr
+          ./obj_test/test_runner
+          alr exec -- gprbuild -p -P websocket_handshake_tests.gpr
+          ./obj_test_handshake/test_handshake
+
+      - name: Create source archive
+        run: |
+          git archive --format=tar.gz --prefix="websocket-ada-${GITHUB_REF_NAME#v}/" -o "websocket-ada-${GITHUB_REF_NAME#v}.tar.gz" "$GITHUB_SHA"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "websocket-ada ${{ github.ref_name }}" \
+            --generate-notes \
+            "websocket-ada-${GITHUB_REF_NAME#v}.tar.gz"

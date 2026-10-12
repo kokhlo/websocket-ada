@@ -6,7 +6,7 @@ RFC 6455 WebSocket client library for Ada.
 
 ## Status
 
-**Work in Progress** — Frame codec + handshake complete, TCP connection layer next.
+**Work in Progress** — Frame codec + handshake complete, TCP connection layer next. Latest release: **v0.3.0**.
 
 Current implementation:
 - ✅ RFC 6455 frame codec (encode/decode)
@@ -18,7 +18,10 @@ Current implementation:
 - ✅ HTTP handshake layer (RFC 6455 §4.1, §4.2.2)
 - ✅ Sec-WebSocket-Accept computation (SHA-1 + Base64)
 - ✅ Server response validation (status 101, case-insensitive headers, Connection token list)
-- ✅ 52 tests (30 frame codec + 22 handshake), all passing
+- ✅ Receiver-side validation: RSV bits, reserved opcodes, fragmented control frames rejected (§5.2, §5.5, §7.2)
+- ✅ `Decode_Client`: server frames must be unmasked (§5.1); close payload validated — code ranges + UTF-8 reason (§5.5.1)
+- ✅ Strict UTF-8 validation (RFC 3629): overlongs, surrogates, > U+10FFFF, incremental state
+- ✅ 99 tests (77 frame codec/UTF-8 + 22 handshake), all passing
 
 Coming next:
 - TCP connection layer (GNAT.Sockets)
@@ -45,9 +48,7 @@ With [Alire](https://alire.ada.dev):
 alr with websocket
 ```
 
-> **Note:** `websocket` is available after the alire-index merge
-> ([PR](https://github.com/alire-project/alire-index/pull/2097)). Until then, use the repository directly:
-> `alr with --use /path/to/websocket-ada`
+> Available in the community index since v0.2.0 ([alire-index PR #2148](https://github.com/alire-project/alire-index/pull/2148)).
 
 ## Building
 
@@ -97,8 +98,8 @@ Decode (Buffer, Decoded, Consumed, Status);
 
 - [x] RFC 6455 frame codec (all frame types, 7/16/64-bit lengths, client masking)
 - [x] HTTP upgrade handshake (Sec-WebSocket-Accept, response validation)
-- [ ] TCP connection layer with automatic Ping/Pong — v0.1
-- [ ] Automatic reconnection with exponential backoff — v0.2
+- [ ] TCP connection layer with automatic Ping/Pong — next
+- [ ] Automatic reconnection with exponential backoff
 - [ ] Per-message compression (`permessage-deflate`, RFC 7692) — v0.3
 
 ## License

@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  alire-build:
+  build-and-test:
     strategy:
       fail-fast: false
       matrix:
@@ -16,7 +16,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: alire-project/setup-alire@v5
-      - name: Build and test
+      - name: Build library
+        run: alr build
+      - name: Run frame codec + UTF-8 tests
         run: |
-          alr build
-          alr test
+          alr exec -- gprbuild -p -P websocket_tests.gpr
+          ./obj_test/test_runner
+      - name: Run handshake + base64 tests
+        run: |
+          alr exec -- gprbuild -p -P websocket_handshake_tests.gpr
+          ./obj_test_handshake/test_handshake
+
+  build-matrix:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: alire-project/setup-alire@v5
+      - name: Build in dev and release configurations
+        run: |
+          alr build --dev
+          alr clean
+          alr build --release
