@@ -38,6 +38,6 @@ jobs:
       - uses: alire-project/setup-alire@v5
       - name: Build in dev and release configurations
         run: |
-          alr build --dev
+          alr build --development
           alr clean
           alr build --release
