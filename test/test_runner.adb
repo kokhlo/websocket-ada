@@ -4,6 +4,7 @@ with Ada.Text_IO; use Ada.Text_IO;
 with Ada.Command_Line;
 with Ada.Streams; use Ada.Streams;
 with Websocket.Frames; use Websocket.Frames;
+with Websocket.Utf8;
 
 procedure Test_Runner is
 
@@ -223,6 +224,216 @@ procedure Test_Runner is
             Assert (Working.Element (0) = Original.Element (0), "double-mask == identity (byte 0)");
             Assert (Working.Element (3) = Original.Element (3), "double-mask == identity (byte 3)");
          end;
+      end;
+      New_Line;
+
+      -----------------------------------------------------------
+      -- Test 9: RFC validation rules on decode
+      -- (RSV bits, reserved opcodes, fragmented control frames,
+      --  close payload shapes, oversized 64-bit length)
+      -----------------------------------------------------------
+      Put_Line ("Test 9: RSV bit set is a protocol error");
+      declare
+         Raw : Payload_Data;
+      begin
+         -- FIN=1, RSV1=1, opcode=Text, unmasked, len=0
+         Raw.Append (16#C1#);
+         Raw.Append (16#00#);
+         Decode (Raw, F_Decoded, Consumed, Status);
+         Assert (Status = Protocol_Error, "RSV1 set rejected");
+         Assert (Consumed = 0, "no bytes consumed on error");
+
+         Raw.Clear;
+         Raw.Append (16#A1#);            -- FIN=1, RSV2=1
+         Raw.Append (16#00#);
+         Decode (Raw, F_Decoded, Consumed, Status);
+         Assert (Status = Protocol_Error, "RSV2 set rejected");
+
+         Raw.Clear;
+         Raw.Append (16#91#);            -- FIN=1, RSV3=1
+         Raw.Append (16#00#);
+         Decode (Raw, F_Decoded, Consumed, Status);
+         Assert (Status = Protocol_Error, "RSV3 set rejected");
+      end;
+      New_Line;
+
+      Put_Line ("Test 10: reserved opcodes are protocol errors");
+      declare
+         Raw : Payload_Data;
+      begin
+         for Op in 3 .. 7 loop
+            Raw.Clear;
+            Raw.Append (16#80# or Stream_Element (Op));
+            Raw.Append (16#00#);
+            Decode (Raw, F_Decoded, Consumed, Status);
+            Assert (Status = Protocol_Error,
+                    "non-control reserved opcode" & Integer'Image (Op)
+                    & " rejected");
+         end loop;
+         for Op in 16#B# .. 16#F# loop
+            Raw.Clear;
+            Raw.Append (16#80# or Stream_Element (Op));
+            Raw.Append (16#00#);
+            Decode (Raw, F_Decoded, Consumed, Status);
+            Assert (Status = Protocol_Error,
+                    "control reserved opcode 0x" & Integer'Image (Op)
+                    & " rejected");
+         end loop;
+      end;
+      New_Line;
+
+      Put_Line ("Test 11: fragmented control frame is a protocol error");
+      declare
+         Raw : Payload_Data;
+      begin
+         -- FIN=0, opcode=Ping, unmasked, len=0
+         Raw.Append (16#09#);
+         Raw.Append (16#00#);
+         Decode (Raw, F_Decoded, Consumed, Status);
+         Assert (Status = Protocol_Error, "FIN=0 Ping rejected");
+      end;
+      New_Line;
+
+      Put_Line ("Test 12: 64-bit length over Stream_Element_Count rejected");
+      declare
+         Raw : Payload_Data;
+      begin
+         -- FIN=1, opcode=Binary, unmasked, 64-bit length = 16#FF...FF#
+         Raw.Append (16#82#);
+         Raw.Append (16#7F#);
+         for I in 1 .. 8 loop
+            Raw.Append (16#FF#);
+         end loop;
+         Decode (Raw, F_Decoded, Consumed, Status);
+         Assert (Status = Protocol_Error,
+                 "length 2**64-1 rejected without crash");
+      end;
+      New_Line;
+
+      Put_Line ("Test 13: Decode_Client close-payload validation");
+      declare
+         Raw : Payload_Data;
+      begin
+         -- masked server frame: FIN=1, opcode=Text, MASK=1, len=1
+         Raw.Clear;
+         Raw.Append (16#81#);
+         Raw.Append (16#81#);
+         Raw.Append (16#00#); Raw.Append (16#00#);
+         Raw.Append (16#00#); Raw.Append (16#00#);
+         Raw.Append (16#41#);
+         Decode_Client (Raw, F_Decoded, Consumed, Status);
+         Assert (Status = Protocol_Error, "masked server frame rejected");
+
+         -- Close, payload = 1 byte (truncated code)
+         Raw.Clear;
+         Raw.Append (16#88#);
+         Raw.Append (16#01#);
+         Raw.Append (16#03#);
+         Decode_Client (Raw, F_Decoded, Consumed, Status);
+         Assert (Status = Protocol_Error, "1-byte close payload rejected");
+
+         -- Close, code 1005 (reserved, must not appear on the wire)
+         Raw.Clear;
+         Raw.Append (16#88#);
+         Raw.Append (16#02#);
+         Raw.Append (16#03#); Raw.Append (16#ED#);
+         Decode_Client (Raw, F_Decoded, Consumed, Status);
+         Assert (Status = Protocol_Error, "close code 1005 rejected");
+
+         -- Close, code 0 (invalid)
+         Raw.Clear;
+         Raw.Append (16#88#);
+         Raw.Append (16#02#);
+         Raw.Append (16#00#); Raw.Append (16#00#);
+         Decode_Client (Raw, F_Decoded, Consumed, Status);
+         Assert (Status = Protocol_Error, "close code 0 rejected");
+
+         -- Close, code 1000 + invalid UTF-8 reason (0xFF lead)
+         Raw.Clear;
+         Raw.Append (16#88#);
+         Raw.Append (16#03#);
+         Raw.Append (16#03#); Raw.Append (16#E8#); Raw.Append (16#FF#);
+         Decode_Client (Raw, F_Decoded, Consumed, Status);
+         Assert (Status = Protocol_Error, "invalid UTF-8 close reason rejected");
+
+         -- Close, code 1000 + valid 2-byte UTF-8 reason (U+00E9 é)
+         Raw.Clear;
+         Raw.Append (16#88#);
+         Raw.Append (16#04#);
+         Raw.Append (16#03#); Raw.Append (16#E8#);
+         Raw.Append (16#C3#); Raw.Append (16#A9#);
+         Decode_Client (Raw, F_Decoded, Consumed, Status);
+         Assert (Status = Success, "code 1000 + valid UTF-8 reason accepted");
+
+         -- Close, code 1000, no reason
+         Raw.Clear;
+         Raw.Append (16#88#);
+         Raw.Append (16#02#);
+         Raw.Append (16#03#); Raw.Append (16#E8#);
+         Decode_Client (Raw, F_Decoded, Consumed, Status);
+         Assert (Status = Success, "bare code 1000 accepted");
+
+         -- Close, code 3000 (registered range), no reason
+         Raw.Clear;
+         Raw.Append (16#88#);
+         Raw.Append (16#02#);
+         Raw.Append (16#0B#); Raw.Append (16#B8#);
+         Decode_Client (Raw, F_Decoded, Consumed, Status);
+         Assert (Status = Success, "close code 3000 accepted");
+
+         -- Close, empty payload
+         Raw.Clear;
+         Raw.Append (16#88#);
+         Raw.Append (16#00#);
+         Decode_Client (Raw, F_Decoded, Consumed, Status);
+         Assert (Status = Success, "empty close payload accepted");
+
+         -- Unmasked text frame from server: fine
+         Raw.Clear;
+         Raw.Append (16#81#);
+         Raw.Append (16#01#);
+         Raw.Append (16#41#);
+         Decode_Client (Raw, F_Decoded, Consumed, Status);
+         Assert (Status = Success, "unmasked server text frame accepted");
+      end;
+      New_Line;
+
+      Put_Line ("Test 14: UTF-8 validator unit checks");
+      declare
+         V    : Websocket.Utf8.Validator;
+         Bad  : constant Stream_Element_Array (1 .. 1) := (1 => 16#FF#);
+         Good : constant Stream_Element_Array (1 .. 1) := (1 => 16#41#);
+         Trunc : constant Stream_Element_Array (1 .. 1) := (1 => 16#C2#);
+      begin
+         Websocket.Utf8.Reset (V);
+         Assert (not Websocket.Utf8.Is_Valid (Bad), "0xFF lead byte rejected");
+         Assert (Websocket.Utf8.Is_Valid (Good), "ASCII accepted");
+         Assert (Websocket.Utf8.Is_Valid ((16#C3#, 16#A9#)), "2-byte U+00E9 accepted");
+         Assert (not Websocket.Utf8.Is_Valid ((16#C0#, 16#AF#)), "overlong C0 AF rejected");
+         Assert (not Websocket.Utf8.Is_Valid ((16#C1#, 16#BF#)), "overlong C1 BF rejected");
+         Assert (not Websocket.Utf8.Is_Valid ((16#E0#, 16#80#, 16#AF#)), "overlong E0 80 AF rejected");
+         Assert (not Websocket.Utf8.Is_Valid ((16#ED#, 16#A0#, 16#80#)), "surrogate D800 rejected");
+         Assert (not Websocket.Utf8.Is_Valid ((16#F4#, 16#90#, 16#80#, 16#80#)), "> U+10FFFF rejected");
+         Assert (Websocket.Utf8.Is_Valid ((16#F4#, 16#8F#, 16#BF#, 16#BF#)), "U+10FFFF accepted");
+         Assert (not Websocket.Utf8.Is_Valid ((16#F0#, 16#80#, 16#80#, 16#80#)), "overlong 4-byte rejected");
+         Assert (not Websocket.Utf8.Is_Valid (Trunc), "truncated sequence rejected");
+         Assert (Websocket.Utf8.Is_Valid ((16#F0#, 16#9F#, 16#98#, 16#80#)), "4-byte emoji accepted");
+         Assert (not Websocket.Utf8.Is_Valid ((16#C3#, 16#28#)), "bad continuation rejected");
+
+         -- Incremental: split a valid 3-byte char across Append calls
+         Websocket.Utf8.Reset (V);
+         Assert (Websocket.Utf8.Append (V, 16#E2#), "incremental lead byte ok");
+         Assert (Websocket.Utf8.Append (V, 16#9C#), "incremental second byte ok");
+         Assert (Websocket.Utf8.Incomplete (V), "mid-sequence reports incomplete");
+         Assert (Websocket.Utf8.Append (V, 16#84#), "incremental final byte ok");
+         Assert (not Websocket.Utf8.Incomplete (V), "complete sequence not incomplete");
+
+         -- Incremental: overlong sequence detected across split
+         Websocket.Utf8.Reset (V);
+         Assert (Websocket.Utf8.Append (V, 16#E0#), "overlong lead accepted so far");
+         Assert (Websocket.Utf8.Append (V, 16#80#), "overlong second byte accepted so far");
+         Assert (not Websocket.Utf8.Append (V, 16#80#),
+                 "overlong detected on final byte");
       end;
       New_Line;
 

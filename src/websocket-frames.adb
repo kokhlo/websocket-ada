@@ -1,5 +1,6 @@
 -- RFC 6455 WebSocket frame codec implementation
 with Interfaces; use Interfaces;
+with Websocket.Utf8;
 
 package body Websocket.Frames is
 
@@ -127,6 +128,21 @@ package body Websocket.Frames is
       F.RSV3 := (Byte0 and 16#10#) /= 0;
       F.Opcode := Byte_To_Opcode (Byte0 and 16#0F#);
 
+      -- RSV bits must be zero unless an extension is negotiated; the
+      -- client library negotiates none, so any set bit fails the
+      -- connection (RFC 6455 §5.2, §7.2).
+      if F.RSV1 or F.RSV2 or F.RSV3 then
+         Status := Protocol_Error;
+         return;
+      end if;
+
+      -- Reserved opcodes are a protocol error without a negotiated
+      -- extension (RFC 6455 §5.2, §7.2)
+      if Is_Reserved_Opcode (F.Opcode) then
+         Status := Protocol_Error;
+         return;
+      end if;
+
       -- Byte 1: MASK bit, payload length
       Byte1 := Buffer.Element (Natural (Pos));
       Pos := Pos + 1;
@@ -156,13 +172,29 @@ package body Websocket.Frames is
          Pos := Pos + 8;
       end if;
 
-      F.Payload_Length := Stream_Element_Count (Payload_Len);
+      -- RFC 6455 §5.5: all control frames must have FIN set and payload
+      -- ≤ 125 bytes; a fragmented or oversized control frame is a
+      -- protocol error.
+      if Is_Control_Frame (F.Opcode) then
+         if not F.FIN then
+            Status := Protocol_Error;
+            return;
+         end if;
+         if Payload_Len > 125 then
+            Status := Protocol_Error;
+            return;
+         end if;
+      end if;
 
-      -- RFC 6455 §5.5: control frames must have payload ≤ 125 bytes
-      if Is_Control_Frame (F.Opcode) and then Payload_Len > 125 then
+      -- A 64-bit length may announce more bytes than a
+      -- Stream_Element_Count can address; reject instead of crashing
+      -- on the conversion.
+      if Payload_Len > Unsigned_64 (Max_Payload_Length) then
          Status := Protocol_Error;
          return;
       end if;
+
+      F.Payload_Length := Stream_Element_Count (Payload_Len);
 
       -- Masking key (4 bytes if masked)
       if Mask_Bit then
@@ -196,6 +228,65 @@ package body Websocket.Frames is
    end Decode;
 
    -------------------------------------------------------------------
+   -- Decode_Client: decode + client-receiver rules (RFC 6455 §5.1, §5.5.1)
+   -------------------------------------------------------------------
+   procedure Decode_Client
+      (Buffer   : in  Payload_Data;
+       F        : out Frame;
+       Consumed : out Stream_Element_Count;
+       Status   : out Decode_Status)
+   is
+   begin
+      Decode (Buffer, F, Consumed, Status);
+      if Status /= Success then
+         return;
+      end if;
+
+      -- §5.1: a server MUST NOT mask frames sent to the client
+      if F.Masked then
+         Status := Protocol_Error;
+         return;
+      end if;
+
+      -- §5.5.1: close payload is [] | code | code + UTF-8 reason
+      if F.Opcode = Close then
+         declare
+            Len : constant Natural := Natural (F.Payload.Length);
+         begin
+            if Len = 1 then
+               Status := Protocol_Error;      -- truncated code
+               return;
+            end if;
+            if Len >= 2 then
+               declare
+                  Code : constant Unsigned_32 :=
+                     Shift_Left (Unsigned_32 (F.Payload.Element (0)), 8)
+                     or Unsigned_32 (F.Payload.Element (1));
+                  Code_OK : constant Boolean :=
+                     (Code in 1000 .. 1003 or else Code in 1007 .. 1011)
+                     or else Code in 3000 .. 4999;
+                  Reason : Stream_Element_Array (1 .. Stream_Element_Offset (Len - 2));
+               begin
+                  if not Code_OK then
+                     Status := Protocol_Error;
+                     return;
+                  end if;
+                  -- bytes 2 .. Len-1 of the payload (0-based) are the reason
+                  for I in 0 .. Len - 3 loop
+                     Reason (Stream_Element_Offset (I + 1)) :=
+                        F.Payload.Element (2 + I);
+                  end loop;
+                  if not Websocket.Utf8.Is_Valid (Reason) then
+                     Status := Protocol_Error;
+                     return;
+                  end if;
+               end;
+            end if;
+         end;
+      end if;
+   end Decode_Client;
+
+   -------------------------------------------------------------------
    -- Apply_Mask: XOR payload with 4-byte key (RFC 6455 §5.3)
    -------------------------------------------------------------------
    procedure Apply_Mask
@@ -218,5 +309,11 @@ package body Websocket.Frames is
    -------------------------------------------------------------------
    function Is_Control_Frame (Op : Opcode_Type) return Boolean is
       (Op = Close or Op = Ping or Op = Pong);
+
+   -------------------------------------------------------------------
+   -- Is_Reserved_Opcode: opcodes 0x3-0x7 and 0xB-0xF (RFC 6455 §5.2)
+   -------------------------------------------------------------------
+   function Is_Reserved_Opcode (Op : Opcode_Type) return Boolean is
+      (Op in Reserved_3 .. Reserved_7 or else Op in Reserved_B .. Reserved_F);
 
 end Websocket.Frames;

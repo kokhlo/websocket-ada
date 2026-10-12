@@ -89,13 +89,39 @@ package Websocket.Frames is
        Consumed : out Stream_Element_Count;
        Status   : out Decode_Status);
 
+   -- Decode a frame as received by a CLIENT (RFC 6455 §5.1: server
+   -- frames MUST NOT be masked) and validate the close payload
+   -- (§5.5.1: body is an optional 2-byte big-endian code plus a UTF-8
+   -- reason). Additional failure modes beyond Decode:
+   --   - the frame is masked (a server must not mask)
+   --   - a Close frame carries a 1-byte payload (invalid body)
+   --   - a Close frame carries an invalid close code (not 1000..1003,
+   --     1007..1011, 3000..4999) or a reason that is not valid UTF-8
+   procedure Decode_Client
+      (Buffer   : in  Payload_Data;
+       F        : out Frame;
+       Consumed : out Stream_Element_Count;
+       Status   : out Decode_Status);
+
    -- Apply/remove masking (RFC 6455 §5.3)
    -- XOR each payload byte with masking_key[i mod 4]
    procedure Apply_Mask
       (Payload : in out Payload_Data;
        Key     : in Masking_Key_Type);
 
+   -- Largest payload this codec accepts on decode. Frames announcing more
+   -- than this (RFC 6455 allows up to 2**63 - 1 in the 64-bit extended
+   -- length) exceed what a Stream_Element_Count can address and are
+   -- rejected as a protocol error rather than crashing on the conversion.
+   Max_Payload_Length : constant Stream_Element_Count :=
+      Stream_Element_Count'Last;
+
    -- Check if opcode is a control frame (RFC 6455 §5.5)
    function Is_Control_Frame (Op : Opcode_Type) return Boolean;
+
+   -- Check if opcode is reserved (RFC 6455 §5.2: 0x3-0x7 non-control,
+   -- 0xB-0xF control). Receiving one of these without a negotiated
+   -- extension is a protocol error (§7.2).
+   function Is_Reserved_Opcode (Op : Opcode_Type) return Boolean;
 
 end Websocket.Frames;
