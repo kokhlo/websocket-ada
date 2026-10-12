@@ -5,6 +5,7 @@
 # Build artifacts
 /obj/
 /obj_test/
+/obj_test_handshake/
 /lib/
 *.o
 *.ali
@@ -21,5 +22,3 @@ test_runner
 
 # OS
 .DS_Store
-obj_test_handshake/
-obj_test/
